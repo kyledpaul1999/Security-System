@@ -1,0 +1,71 @@
+version: '3.8'
+
+services:
+  timescaledb:
+    image: timescale/timescaledb:latest-pg14
+    container_name: timescaledb
+    environment:
+      - POSTGRES_USER=user
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=security_system
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5432:5432"
+    networks:
+      - security_system_network
+
+  stream_processor:
+    build:
+      context: ./src/stream_processor
+    container_name: stream_processor
+    depends_on:
+      - timescaledb
+    environment:
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=security_system
+      - ZMQ_PUB_URL=tcp://*:5555
+      - RTSP_URLS=rtsp://user:password@192.168.1.64:554/Streaming/Channels/101,rtsp://user:password@192.168.1.64:554/Streaming/Channels/201,rtsp://user:password@192.168.1.64:554/Streaming/Channels/301
+    networks:
+      - security_system_network
+
+  person_detector:
+    build:
+      context: ./src/person_detector
+    container_name: person_detector
+    depends_on:
+      - stream_processor
+    environment:
+      - ZMQ_SUB_URL=tcp://stream_processor:5555
+      - ZMQ_PUB_URL=tcp://*:5556
+      - MIN_CONTOUR_AREA=500
+    networks:
+      - security_system_network
+
+  event_handler:
+    build:
+      context: ./src/event_handler
+    container_name: event_handler
+    depends_on:
+      - person_detector
+      - timescaledb
+    environment:
+      - DB_USER=user
+      - DB_PASSWORD=password
+      - DB_HOST=timescaledb
+      - DB_PORT=5432
+      - DB_NAME=security_system
+      - ZMQ_SUB_URL=tcp://person_detector:5556
+    networks:
+      - security_system_network
+
+volumes:
+  timescaledb_data:
+
+networks:
+  security_system_network:
+    driver: bridge
