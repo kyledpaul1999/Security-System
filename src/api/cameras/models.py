@@ -1,0 +1,38 @@
+from django.db import models
+import uuid
+from identities.models import User
+
+class NvrDevice(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    vendor = models.CharField(max_length=100, blank=True, null=True)
+    model = models.CharField(max_length=100, blank=True, null=True)
+    host = models.CharField(max_length=255)
+    port = models.IntegerField()
+    username = models.CharField(max_length=255, blank=True, null=True)
+    encrypted_credentials = models.TextField(blank=True, null=True)
+    status = models.CharField(max_length=50, default='unknown')
+    last_seen_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class Camera(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    nvr_device = models.ForeignKey(NvrDevice, on_delete=models.SET_NULL, blank=True, null=True)
+    name = models.CharField(max_length=255)
+    channel_no = models.IntegerField()
+    rtsp_main_url = models.TextField(blank=True, null=True)
+    rtsp_sub_url = models.TextField(blank=True, null=True)
+    onvif_profile_token = models.TextField(blank=True, null=True)
+    location = models.CharField(max_length=255, blank=True, null=True)
+    is_enabled = models.BooleanField(default=True)
+    health_status = models.CharField(max_length=50, default='unknown')
+    last_health_check_at = models.DateTimeField(blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+class CameraPtzPreset(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    camera = models.ForeignKey(Camera, on_delete=models.CASCADE)
+    name = models.CharField(max_length=255)
+    preset_token = models.CharField(max_length=255, blank=True, null=True)
+    created_at = models.DateTimeField(auto_now_add=True)

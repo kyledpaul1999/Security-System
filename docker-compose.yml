@@ -16,6 +16,22 @@ services:
     networks:
       - security_system_network
 
+  api:
+    build:
+      context: ./src/api
+    container_name: api
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py runserver 0.0.0.0:8000"
+    volumes:
+      - ./src/api:/home/appuser/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      - timescaledb
+    networks:
+      - security_system_network
+
   stream_processor:
     build:
       context: ./src/stream_processor
