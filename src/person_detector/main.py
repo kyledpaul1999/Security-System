@@ -90,28 +90,28 @@ def main():
         while True:
             # Receive a frame from the stream_processor. The message is multipart, containing
             # the camera ID and the raw JPEG-encoded frame data.
-            camer-id, frame_bytes = sub_socket.recv_multipart()
-            camer-id = camer-id.decode('utf-8')
+            camera_id, frame_bytes = sub_socket.recv_multipart()
+            camera_id = camera_id.decode('utf-8')
 
             # Decode the JPEG data into a NumPy array that OpenCV can process.
             frame_np = np.frombuffer(frame_bytes, dtype=np.uint8)
             frame = cv2.imdecode(frame_np, cv2.IMREAD_COLOR)
 
             if frame is None:
-                print(f"Received an empty or invalid frame for camera {camer-id}. Skipping.")
+                print(f"Received an empty or invalid frame for camera {camera_id}. Skipping.")
                 continue
 
             # --- Motion Detection Pre-Filter ---
             # If this is the first frame from a camera, create a background subtractor for it.
-            if camer-id not in background_subtractors:
+            if camera_id not in background_subtractors:
                 # We use the MOG2 background subtraction algorithm, which is robust and widely used.
-                background_subtractors[camer-id] = cv2.createBackgroundSubtractorMOG2(
+                background_subtractors[camera_id] = cv2.createBackgroundSubtractorMOG2(
                     history=500, varThreshold=50, detectShadows=True)
-                print(f"Initialized background subtractor for camera {camer-id}")
+                print(f"Initialized background subtractor for camera {camera_id}")
 
             # Apply the background subtractor to the current frame to get a foreground mask.
             # This mask highlights the pixels that have changed, i.e., where motion has occurred.
-            fg_mask = background_subtractors[camer-id].apply(frame)
+            fg_mask = background_subtractors[camera_id].apply(frame)
 
             # Find the distinct moving objects (contours) in the foreground mask.
             contours, _ = cv2.findContours(fg_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
@@ -127,7 +127,7 @@ def main():
             if not motion_detected:
                 continue
 
-            print(f"Significant motion detected on camera {camer-id}. Running person detection...")
+            print(f"Significant motion detected on camera {camera_id}. Running person detection...")
             # --- Person Detection ---
             # Perform person detection on the frame using the YOLOv8 model.
             # The 'predict' method handles all the complex parts of the inference.
@@ -146,7 +146,7 @@ def main():
 
                             # Assemble the detection event data into a dictionary.
                             detection_event = {
-                                "camer-id": camer-id,
+                                "camera_id": camera_id,
                                 "time": time.time(),  # Use a Unix timestamp for the event time
                                 "label": label,
                                 "confidence": confidence,

@@ -1,87 +1,81 @@
-# Real-Time AI Object Detection Security System
+# Local-First AI Security System
 
-This project is a real-time AI object detection security system that uses RTSP streams, PyTorch, YOLOv8, ZeroMQ, and TimescaleDB. It is designed with a microservice architecture and is orchestrated using Docker Compose.
+This project is a comprehensive, locally hosted security system designed to replace commercial solutions like ADT Pulse. It integrates with existing IP cameras and NVRs to provide live monitoring, continuous recording, and real-time, AI-powered person detection.
 
-## Project Architecture
+Built with a modular, microservices-ready architecture, the system is designed for homelab or local server deployment first, ensuring that all sensitive video data remains on your private network by default.
 
-The system is composed of three main microservices:
+For a complete technical overview, please see the [architecture.md](architecture.md) file.
 
-1.  **Stream Processor**: Connects to RTSP-enabled cameras, captures video frames, and publishes them to a ZeroMQ message queue.
-2.  **Person Detector**: Subscribes to the frame queue, performs object detection using the YOLOv8 model, and publishes detection events to another ZeroMQ queue.
-3.  **Event Handler**: Subscribes to the detection event queue, stores the events in a TimescaleDB database, and contains placeholder logic for sending alerts.
+## Key Features
 
-This architecture is designed for scalability and maintainability. Each service can be developed, deployed, and scaled independently.
+- **Live Video Monitoring**: View camera streams in real-time through a web or mobile client.
+- **Continuous & Triggered Recording**: Supports scheduled, manual, motion-triggered, and AI-powered recording.
+- **AI-Powered Person Detection**: Uses YOLOv8 to run real-time person detection on video streams, with configurable detection zones and confidence thresholds.
+- **Rich Automation**: A powerful rules engine allows for custom automations based on events (e.g., "if a person is detected at the front door after 10 PM, send a notification and start a 60-second recording").
+- **Notifications**: Receive alerts via mobile push, email, or webhooks.
+- **Secure Remote Access**: A VPN-first approach ensures that your system is not exposed to the public internet.
+- **Local Data Storage**: All video clips, recordings, and event metadata are stored on your local infrastructure.
+- **Audit Trails**: Maintains a clear audit log for user actions, detections, and system events.
 
-### Performance Optimization
+## System Architecture
 
-To ensure the system runs efficiently, even with multiple high-resolution camera streams, a motion-based detection filter has been implemented in the `person_detector` service. Here’s how it works:
+The system uses a hybrid architecture that combines a core **Django monolith** with several specialized **Python microservices** for data processing. This design provides the rapid development of a monolith for the main API while isolating resource-intensive tasks into scalable, independent services.
 
--   **Background Subtraction**: The service uses OpenCV’s background subtraction capabilities to identify areas of motion in each frame.
--   **Motion Filtering**: The YOLOv8 person detection model is only run on frames where significant motion is detected. This dramatically reduces the computational load on the GPU/CPU.
--   **Adjustable Sensitivity**: The sensitivity of the motion detection can be tuned via the `MIN_CONTOUR_AREA` environment variable in the `docker-compose.yml` file, allowing you to customize it for your specific environment.
+The primary services, orchestrated with Docker Compose, are:
 
-This optimization ensures that your system's resources are used intelligently, focusing only on the frames that matter.
+-   `api`: A Django-based monolith that serves the primary REST API for the web and mobile clients. It manages users, cameras, recordings, automation rules, and more.
+-   `stream_processor`: Connects to RTSP-enabled cameras, captures video frames, and publishes them to a ZeroMQ message queue.
+-   `person_detector`: Subscribes to the frame queue, runs person detection using a YOLOv8 model, and publishes detection events.
+-   `event_handler`: Subscribes to detection events, stores them in the database, and can trigger further actions.
+-   `timescaledb`: A PostgreSQL database with the TimescaleDB extension, used as the primary data store for all system metadata and events.
+-   `redis`: Used for caching, session management, and managing the state of background tasks.
 
-### System Components
+## Technology Stack
 
--   **Docker & Docker Compose**: For containerizing and orchestrating the application services.
--   **Python**: The primary language for all microservices.
--   **OpenCV**: Used for video capture and image processing.
--   **PyTorch & YOLOv8**: For performing real-time object detection.
--   **ZeroMQ**: A high-performance asynchronous messaging library for communication between services.
--   **TimescaleDB**: A time-series SQL database for storing detection events, built on PostgreSQL.
--   **React (Future)**: The project structure includes a placeholder for a future web-based user interface.
+-   **Backend**: Django 4.2, Python 3.9
+-   **AI / ML**: PyTorch, YOLOv8, OpenCV
+-   **Database**: PostgreSQL with TimescaleDB
+-   **Messaging**: ZeroMQ
+-   **Caching**: Redis
+-   **Infrastructure**: Docker & Docker Compose
 
 ## Getting Started
 
 ### Prerequisites
 
--   Docker and Docker Compose installed.
--   Access to one or more RTSP video streams from IP cameras.
+-   Docker and Docker Compose must be installed on your system.
+-   You need access to one or more RTSP video streams from your IP cameras or NVR.
 
 ### Configuration
 
-Before launching the system, you need to configure the camera streams.
+1.  **Docker Compose**: The primary configuration is handled via environment variables in the `docker-compose.yml` file. You may need to adjust the RTSP URLs for the `stream_processor` service to match your cameras.
 
-1.  **Database**: The `database/init.sql` file is pre-configured to create the necessary tables and add three sample cameras. You should update the `rtsp_url` values in this file to match your camera streams. You can also add or remove cameras as needed.
-
-2.  **Docker Compose**: The `docker-compose.yml` file defines the services. You can modify the environment variables in this file if needed, but the defaults should work for a local setup.
+2.  **Database Initialization**: The `timescaledb` service will be initialized automatically on the first run. The Django `api` service is configured to run database migrations automatically on startup, ensuring the schema is always up-to-date.
 
 ### Running the System
 
-Once configured, you can start the entire system with a single command:
+To build the Docker images and start all the services, run the following command from the project root:
 
 ```bash
 docker-compose up --build
 ```
 
-This command will:
+This will:
+1.  Build the Docker images for each service.
+2.  Start all the containers defined in `docker-compose.yml`.
+3.  Automatically run Django database migrations.
+4.  Begin processing the configured video streams.
 
-1.  Build the Docker images for each microservice.
-2.  Start the TimescaleDB container and initialize the database using the `init.sql` script.
-3.  Start the `stream_processor`, `object_detector`, and `event_handler` services.
-
-You can view the logs for each service in a separate terminal:
-
+You can view the logs for a specific service using:
 ```bash
 docker-compose logs -f <service_name>
 ```
+(e.g., `api`, `stream_processor`, `person_detector`)
 
-Replace `<service_name>` with `stream_processor`, `person_detector`, or `event_handler`.
+### Stopping the System
 
-To stop the system, press `Ctrl+C` in the terminal where `docker-compose up` is running, or run:
+To stop all running containers, press `Ctrl+C` in the terminal where Docker Compose is running, or execute:
 
 ```bash
 docker-compose down
 ```
-
-## Database Schema
-
-The database schema is designed to be lean and efficient for time-series data.
-
--   `cameras`: Stores information about each camera, including its name and RTSP URL.
--   `detection_events`: A TimescaleDB hypertable that stores every object detection event. It is partitioned by time for fast querying and includes details like the camera, detected object label, confidence score, and bounding box coordinates.
-
-## Future Development
-
-The `frontend` directory is a placeholder for a React application that will provide a user interface for viewing camera streams and detection events. The `event_handler` service can be extended to include a REST API to serve data to the frontend.

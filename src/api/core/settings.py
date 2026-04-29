@@ -128,7 +128,13 @@ STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'identities.User'
 
-# https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
+import sys
+if 'test' in sys.argv or 'pytest' in sys.argv[0]:
+    DATABASES['default'] = {
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': ':memory:',
+    }
+
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 

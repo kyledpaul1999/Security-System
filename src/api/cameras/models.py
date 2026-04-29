@@ -15,9 +15,15 @@ class NvrDevice(models.Model):
     last_seen_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        unique_together = ['host', 'port']
+
+    def __str__(self):
+        return self.name
+
 class Camera(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    nvr_device = models.ForeignKey(NvrDevice, on_delete=models.SET_NULL, blank=True, null=True)
+    nvr_device = models.ForeignKey(NvrDevice, on_delete=models.SET_NULL, blank=True, null=True, related_name='cameras')
     name = models.CharField(max_length=255)
     channel_no = models.IntegerField()
     rtsp_main_url = models.TextField(blank=True, null=True)
@@ -30,9 +36,15 @@ class Camera(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    def __str__(self):
+        return self.name
+
 class CameraPtzPreset(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
-    camera = models.ForeignKey(Camera, on_delete=models.CASCADE)
+    camera = models.ForeignKey(Camera, on_delete=models.CASCADE, related_name='ptz_presets')
     name = models.CharField(max_length=255)
     preset_token = models.CharField(max_length=255, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return f"{self.camera.name} - {self.name}"

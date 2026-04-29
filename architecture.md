@@ -1667,3 +1667,62 @@ React + React Native clients
 ```
 
 This design keeps the system locally controlled, secure, modular, and practical to build incrementally. It also preserves the original requirements around VPN access, Hikvision integration, recording, AI detection, notifications, monitoring, and future scalability while adding clearer service boundaries, automation support, API structure, data modeling, and operational guidance.
+
+## 24. Testing Strategy
+
+A layered testing strategy will be employed to ensure code quality, service correctness, and system reliability.
+
+### 24.1 Unit Testing
+
+Unit tests focus on isolating and verifying individual components in a fast and independent manner.
+
+**Key Principles:**
+
+- **Isolation**: External services (databases, caches, other microservices) must be mocked.
+- **Speed**: Tests should run quickly to provide immediate feedback during development.
+- **Scope**: Test individual functions, classes, and modules' business logic.
+
+**Recommended Tooling:**
+
+- **Python (FastAPI / Django)**:
+  - `pytest` for the testing framework.
+  - `pytest-django` for Django-specific helpers.
+  - `factory-boy` for generating test data.
+  - `unittest.mock` or `pytest-mock` for mocking dependencies.
+  - Use an in-memory SQLite database for test runs to ensure speed and isolation.
+- **Node.js (TypeScript)**:
+  - `Jest` or `Vitest` as the test runner.
+  - `supertest` for in-process API endpoint testing.
+  - `nock` for mocking HTTP requests to external services.
+  - `ioredis-mock` or similar for mocking Redis interactions.
+
+### 24.2 Integration Testing
+
+Integration tests verify that services collaborate correctly within an isolated, ephemeral environment managed by Docker Compose.
+
+**Key Principles:**
+
+- **Test Slices**: Use dedicated Docker Compose files (e.g., `docker-compose.test.yml`) to spin up only the services required for a specific test scenario (a "slice" of the architecture).
+- **Ephemeral Environment**: Each test run should use a fresh, dedicated test database and cache to ensure tests are independent and repeatable.
+- **Real Communication**: Services should communicate over the Docker network using their service names, just as they would in production.
+
+**Example Workflow (User Authentication):**
+
+1. **Setup**: A Docker Compose environment is launched with the `api-gateway`, `auth-service`, `postgres`, and `redis` containers. The test database is empty.
+2. **Execution**: The integration test suite, running inside the `auth-service` container, makes a real HTTP request to the `api-gateway`'s login endpoint.
+3. **Verification**: The test asserts that a valid JWT is returned and verifies that the correct session data was written to the Redis container and audit logs were created in the PostgreSQL container.
+
+### 24.3 Continuous Integration (CI) Workflow
+
+The testing strategy will be automated in a CI pipeline on every push or pull request.
+
+1. **Lint**: Statically analyze code for style and quality issues.
+2. **Unit Test**: Run all unit tests across all services.
+3. **Integration Test**:
+   - Build fresh Docker images.
+   - Launch the integration test environment using Docker Compose.
+   - Execute the integration test suites.
+   - Tear down the environment.
+4. **Build**: If all tests pass, build final production-ready container images.
+
+This approach ensures fast feedback during development via unit tests and high confidence in system stability via automated integration tests, aligning with the project's goals for maintainability and reliability.
