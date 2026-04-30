@@ -37,3 +37,6 @@ class DetectionEvent(TimescaleModel):
     frame_ts = models.DateTimeField()
     metadata = models.JSONField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = (("id", "time"),)

@@ -800,7 +800,8 @@ CREATE TABLE detection_policies (
 );
 
 CREATE TABLE detection_events (
-  id UUID PRIMARY KEY,
+  time TIMESTAMPTZ NOT NULL,
+  id UUID NOT NULL,
   camera_id UUID NOT NULL REFERENCES cameras(id) ON DELETE CASCADE,
   zone_id UUID REFERENCES detection_zones(id) ON DELETE SET NULL,
   event_type VARCHAR(50) NOT NULL,
@@ -808,8 +809,18 @@ CREATE TABLE detection_events (
   snapshot_object_key TEXT,
   frame_ts TIMESTAMPTZ NOT NULL,
   metadata JSONB,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (id, time)
 );
+
+-- Note on Detection Events:
+-- The detection_events table is a TimescaleDB hypertable partitioned by the 'time' column.
+-- A TimescaleDB requirement is that any unique index on a hypertable must include the partitioning key.
+-- Therefore, the primary key is a composite of (id, time).
+-- Django's ORM does not natively support Foreign Keys to composite primary keys.
+-- To resolve this, tables referencing detection_events (e.g., automation_runs, notifications)
+-- will store the event's UUID in a 'detection_event_id' field and the relationship will be managed
+-- at the application level instead of at the database level with a FOREIGN KEY constraint.
 ```
 
 ### 11.5 Automation and Notification Tables
@@ -833,7 +844,7 @@ CREATE TABLE automation_runs (
   id UUID PRIMARY KEY,
   rule_id UUID REFERENCES automation_rules(id) ON DELETE SET NULL,
   source_event_type VARCHAR(100),
-  source_event_id UUID,
+  detection_event_id UUID,
   matched BOOLEAN NOT NULL,
   status VARCHAR(50) NOT NULL,
   result JSONB,
@@ -868,7 +879,7 @@ CREATE TABLE notification_rules (
 CREATE TABLE notifications (
   id UUID PRIMARY KEY,
   rule_id UUID REFERENCES notification_rules(id) ON DELETE SET NULL,
-  detection_event_id UUID REFERENCES detection_events(id) ON DELETE SET NULL,
+  detection_event_id UUID,
   delivery_channel VARCHAR(50) NOT NULL,
   destination TEXT NOT NULL,
   status VARCHAR(50) NOT NULL,

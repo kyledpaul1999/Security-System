@@ -13,6 +13,21 @@ services:
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d security_system"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - security_system_network
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
     networks:
       - security_system_network
 
@@ -28,7 +43,10 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - timescaledb
+      timescaledb:
+        condition: service_healthy
+      redis:
+        condition: service_started
     networks:
       - security_system_network
 
@@ -81,6 +99,7 @@ services:
 
 volumes:
   timescaledb_data:
+  redis_data:
 
 networks:
   security_system_network:

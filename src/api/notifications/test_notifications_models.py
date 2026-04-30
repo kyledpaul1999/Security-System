@@ -70,12 +70,36 @@ class TestNotificationModel:
 
         assert notification.rule is None
 
+    def test_notification_can_link_to_detection_event(self, rule, camera):
+        """Test that a Notification can be linked to a DetectionEvent via UUID."""
+        event = DetectionEvent.objects.create(
+            camera=camera,
+            event_type="person",
+            confidence=0.99,
+            frame_ts=timezone.now(),
+            time=timezone.now()
+        )
+        notification = Notification.objects.create(
+            rule=rule,
+            detection_event_id=event.id,  # Link by ID
+            delivery_channel="email",
+            destination="t@test.com",
+            status="pending"
+        )
+
+        retrieved_notification = Notification.objects.get(pk=notification.pk)
+        assert retrieved_notification.detection_event_id == event.id
+
     def test_detection_event_on_delete(self, rule, camera):
         """Test that deleting a detection event sets the notification's event field to NULL."""
         event = DetectionEvent.objects.create(camera=camera, event_type="person", confidence=0.9, frame_ts=timezone.now(), time=timezone.now())
-        notification = Notification.objects.create(rule=rule, detection_event=event, delivery_channel="email", destination="t@test.com", status="sent")
+        notification = Notification.objects.create(rule=rule, detection_event_id=event.id, delivery_channel="email", destination="t@test.com", status="sent")
 
+        # This test no longer applies in the same way, as there is no cascade or SET_NULL.
+        # Instead, we are just testing that the ID is stored.
+        # The relationship is now logical, not enforced by the database.
         event.delete()
         notification.refresh_from_db()
 
-        assert notification.detection_event is None
+        # The ID should still be there.
+        assert notification.detection_event_id is not None

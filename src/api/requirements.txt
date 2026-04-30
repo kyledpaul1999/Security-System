@@ -4,3 +4,7 @@ djangorestframework
 django-cors-headers
 python-dotenv
 django-timescaledb
+django-redis
+pytest
+pytest-django
+factory-boy

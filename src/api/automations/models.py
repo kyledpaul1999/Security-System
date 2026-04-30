@@ -1,6 +1,7 @@
 from django.db import models
 import uuid
 from identities.models import User
+from detections.models import DetectionEvent
 
 class AutomationRule(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -18,8 +19,8 @@ class AutomationRule(models.Model):
 class AutomationRun(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     rule = models.ForeignKey(AutomationRule, on_delete=models.SET_NULL, blank=True, null=True)
+    detection_event_id = models.UUIDField(null=True, blank=True, db_index=True)
     source_event_type = models.CharField(max_length=100, blank=True, null=True)
-    source_event_id = models.UUIDField(blank=True, null=True)
     matched = models.BooleanField()
     status = models.CharField(max_length=50)
     result = models.JSONField(blank=True, null=True)

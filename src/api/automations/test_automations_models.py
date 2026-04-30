@@ -3,6 +3,8 @@ import pytest
 from django.utils import timezone
 from identities.models import User
 from automations.models import AutomationRule, AutomationRun, AutomationActionRun
+from detections.models import DetectionEvent
+from cameras.models import Camera
 
 @pytest.fixture
 def user():
@@ -54,6 +56,26 @@ class TestAutomationRunModels:
         rule.delete()
         run.refresh_from_db()
         assert run.rule is None
+
+    def test_automation_run_can_link_to_detection_event(self, rule):
+        """Test that an AutomationRun can be linked to a DetectionEvent via UUID."""
+        camera = Camera.objects.create(name="Test Camera", channel_no=1)
+        event = DetectionEvent.objects.create(
+            camera=camera,
+            event_type="person",
+            confidence=0.99,
+            frame_ts=timezone.now(),
+            time=timezone.now()
+        )
+        run = AutomationRun.objects.create(
+            rule=rule,
+            detection_event_id=event.id,  # Link by ID
+            matched=True,
+            status="pending"
+        )
+
+        retrieved_run = AutomationRun.objects.get(pk=run.pk)
+        assert retrieved_run.detection_event_id == event.id
 
     def test_create_automation_action_run(self, rule):
         """Test creating an AutomationActionRun."""

@@ -19,7 +19,7 @@ class NotificationRule(models.Model):
 class Notification(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     rule = models.ForeignKey(NotificationRule, on_delete=models.SET_NULL, blank=True, null=True)
-    detection_event = models.ForeignKey(DetectionEvent, on_delete=models.SET_NULL, blank=True, null=True)
+    detection_event_id = models.UUIDField(null=True, blank=True, db_index=True)
     delivery_channel = models.CharField(max_length=50)
     destination = models.TextField()
     status = models.CharField(max_length=50)

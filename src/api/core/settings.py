@@ -34,11 +34,11 @@ INSTALLED_APPS = [
     'timescale',
     'identities.apps.IdentitiesConfig',
     'cameras.apps.CamerasConfig',
-    'recordings.apps.RecordingsConfig',
     'detections.apps.DetectionsConfig',
     'automations.apps.AutomationsConfig',
     'notifications.apps.NotificationsConfig',
     'security.apps.SecurityConfig',
+    'recordings.apps.RecordingsConfig',
 ]
 
 MIDDLEWARE = [
@@ -89,6 +89,19 @@ DATABASES = {
 
 # Add TimescaleDB to the database engine
 DATABASES['default']['ENGINE'] = 'timescale.db.backends.postgresql'
+
+# Cache
+# https://docs.djangoproject.com/en/4.2/ref/settings/#caches
+
+CACHES = {
+    "default": {
+        "BACKEND": "django_redis.cache.RedisCache",
+        "LOCATION": "redis://redis:6379/1",
+        "OPTIONS": {
+            "CLIENT_CLASS": "django_redis.client.DefaultClient",
+        }
+    }
+}
 
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
