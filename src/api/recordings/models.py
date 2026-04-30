@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 import uuid
 from identities.models import User
 from cameras.models import Camera
@@ -13,6 +13,24 @@ class Recording(models.Model):
     duration_seconds = models.IntegerField()
     total_size_bytes = models.BigIntegerField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    @classmethod
+    def create_recording(cls, camera, recording_type, start_time, end_time, object_prefix, duration_seconds, total_size_bytes):
+        with transaction.atomic(isolation='SERIALIZABLE'):
+            # Example check: limit to 10 recordings per camera
+            if Recording.objects.filter(camera=camera).count() >= 10:
+                raise Exception('Maximum number of recordings reached for this camera.')
+
+            return cls.objects.create(
+                camera=camera,
+                recording_type=recording_type,
+                start_time=start_time,
+                end_time=end_time,
+                object_prefix=object_prefix,
+                duration_seconds=duration_seconds,
+                total_size_bytes=total_size_bytes,
+            )
+
 
 class RecordingSegment(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -45,3 +63,12 @@ class LiveStream(models.Model):
     ended_at = models.DateTimeField(blank=True, null=True)
     created_by = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=['camera'],
+                condition=models.Q(status='active'),
+                name='unique_active_stream_per_camera'
+            )
+        ]

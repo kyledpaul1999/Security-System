@@ -63,16 +63,36 @@ def insert_detection_event(conn, event_data):
         print(f"Error inserting detection event: {e}")
         conn.rollback() # Roll back the transaction on error
 
-def route_alert(event_data):
+def route_alert(conn, event_data):
     """
-    Placeholder function for routing alerts.
-    In a real system, this function would trigger notifications (e.g., email, SMS, push notification)
-    based on the nature of the detection event (e.g., detecting a 'person' in a restricted area).
+    Evaluates automation rules against the event data and triggers alerts.
+    This function is wrapped in a REPEATABLE READ transaction to ensure that the
+    rules are not modified while they are being evaluated.
     """
-    # Example: Send an alert if a person is detected with high confidence
-    if event_data['label'] == 'person' and event_data['confidence'] > 0.85:
-        print(f"ALERT: Person detected on camera {event_data['camera_id']} with {event_data['confidence']:.2f} confidence.")
-        # Here you would add code to send an email, SMS, or other notification.
+    try:
+        # Set transaction isolation level to REPEATABLE READ
+        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_REPEATABLE_READ)
+        with conn.cursor() as cur:
+            print(f"Evaluating rules for event: {event_data}")
+
+            # In a real system, you would fetch and evaluate a set of rules
+            # from the database that match the event type or camera.
+            # For example:
+            # cur.execute("SELECT conditions, actions FROM automation_rules WHERE trigger_event_type = %s", (event_data['label'],))
+            # rules = cur.fetchall()
+
+            # Placeholder: Simple rule evaluation
+            if event_data['label'] == 'person' and event_data['confidence'] > 0.85:
+                print(f"ALERT: Person detected on camera {event_data['camera_id']} with {event_data['confidence']:.2f} confidence.")
+                # Here you would dispatch actions, like sending a notification.
+
+        conn.commit() # Commit the transaction
+    except psycopg2.Error as e:
+        print(f"Error in route_alert transaction: {e}")
+        conn.rollback()
+    finally:
+        # It's good practice to reset the isolation level to the default.
+        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_DEFAULT)
 
 def main():
     """
@@ -104,7 +124,7 @@ def main():
             insert_detection_event(db_conn, event_data)
             
             # Process the event for potential alerts
-            route_alert(event_data)
+            route_alert(db_conn, event_data)
 
     except KeyboardInterrupt:
         print("Shutting down event handler.")

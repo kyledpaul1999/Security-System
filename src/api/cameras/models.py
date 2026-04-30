@@ -1,6 +1,5 @@
-from django.db import models
+from django.db import models, transaction
 import uuid
-from identities.models import User
 
 class NvrDevice(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -38,6 +37,11 @@ class Camera(models.Model):
 
     def __str__(self):
         return self.name
+    def update_health_status(self, status: str):
+        with transaction.atomic():
+            camera = Camera.objects.select_for_update().get(pk=self.pk)
+            camera.health_status = status
+            camera.save()
 
 class CameraPtzPreset(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
