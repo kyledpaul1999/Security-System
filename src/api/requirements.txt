@@ -8,3 +8,6 @@ django-redis
 pytest
 pytest-django
 factory-boy
+# Storage
+django-storages
+boto3

@@ -1,90 +1,86 @@
-
-import cv2
-import zmq
 import os
 import time
 import threading
-import psycopg2
-from psycopg2 import OperationalError
 
-# This service connects to RTSP streams, captures frames, and publishes them using ZeroMQ.
-# It's designed to be resilient, attempting to reconnect to streams and the database if connections are lost.
+# --- Django Setup ---
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'src.api.core.settings')
+import django
+django.setup()
+# --- End Django Setup ---
 
-def get_db_connection():
-    """
-    Establishes a connection to the PostgreSQL database using environment variables.
-    This function will retry connection attempts for a short period if the database
-    is not immediately available, which is common in containerized environments.
-    """
-    retries = 5
-    while retries > 0:
-        try:
-            conn = psycopg2.connect(
-                dbname=os.getenv("DB_NAME"),
-                user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASSWORD"),
-                host=os.getenv("DB_HOST"),
-                port=os.getenv("DB_PORT")
-            )
-            print("Database connection successful.")
-            return conn
-        except OperationalError as e:
-            print(f"Database connection failed: {e}")
-            retries -= 1
-            print(f"Retrying connection in 5 seconds... ({retries} retries left)")
-            time.sleep(5)
-    print("Could not establish database connection after several retries. Exiting.")
-    return None
+import cv2
+import zmq
+import ffmpeg
+from src.api.cameras.models import Camera
+from src.api.recordings.models import LiveStream
 
-def get_cameras(conn):
-    """
-    Fetches camera information (ID and RTSP URL) from the database.
-    This allows for dynamic configuration of video streams without changing the code.
-    """
-    if conn is None:
-        return []
+def get_cameras():
+    """Fetches all enabled cameras from the database using the Django ORM."""
+    return Camera.objects.filter(is_enabled=True)
+
+def start_ffmpeg_process(rtsp_url, hls_output_path):
     try:
-        with conn.cursor() as cur:
-            cur.execute("SELECT id, rtsp_url FROM cameras")
-            cameras = cur.fetchall()
-            print(f"Found {len(cameras)} cameras in the database.")
-            return cameras
-    except psycopg2.Error as e:
-        print(f"Error fetching cameras: {e}")
-        return []
+        process = (
+            ffmpeg.input(rtsp_url, rtsp_transport='tcp', use_wallclock_as_timestamps=1)
+            .output(
+                hls_output_path,
+                format='hls',
+                hls_time=10,
+                hls_list_size=6,
+                hls_flags='delete_segments',
+                vcodec='copy',
+                acodec='copy'
+            )
+            .run_async(pipe_stdout=True, pipe_stderr=True)
+        )
+        return process
+    except Exception as e:
+        print(f"Error starting FFmpeg: {e}")
+        return None
 
 def stream_camera(camera_id, rtsp_url, zmq_socket):
     """
-    Connects to a single RTSP stream, captures frames, and publishes them.
-    This function runs in a separate thread for each camera.
-    If the stream connection is lost, it will attempt to reconnect.
+    Connects to a single RTSP stream, publishes frames to ZeroMQ, and
+    transcodes the stream to HLS.
     """
     print(f"Starting stream for camera {camera_id} at {rtsp_url}")
+
+    # --- HLS Conversion ---
+    hls_output_dir = f"/media/hls/{camera_id}"
+    os.makedirs(hls_output_dir, exist_ok=True)
+    hls_output_path = f"{hls_output_dir}/index.m3u8"
+
+    ffmpeg_process = start_ffmpeg_process(rtsp_url, hls_output_path)
+    if not ffmpeg_process:
+        return
+
+    LiveStream.objects.update_or_create(
+        camera_id=camera_id,
+        defaults={
+            'status': 'active',
+            'hls_manifest_path': hls_output_path,
+            'stream_profile': 'main'
+        }
+    )
+
+    # --- ZeroMQ Frame Publishing ---
+    cap = cv2.VideoCapture(rtsp_url)
+    if not cap.isOpened():
+        print(f"Error: Could not open RTSP stream for camera {camera_id}")
+        return
+
     while True:
-        # Attempt to connect to the video stream
-        cap = cv2.VideoCapture(rtsp_url)
-        if not cap.isOpened():
-            print(f"Error: Could not open stream for camera {camera_id}. Retrying in 10 seconds.")
-            time.sleep(10)
-            continue
+        ret, frame = cap.read()
+        if not ret:
+            break
 
-        print(f"Successfully connected to stream for camera {camera_id}.")
-        while cap.isOpened():
-            # Read a frame from the stream
-            ret, frame = cap.read()
-            if not ret:
-                print(f"Stream for camera {camera_id} ended. Reconnecting...")
-                break  # Exit inner loop to trigger reconnection
+        _, buffer = cv2.imencode('.jpg', frame)
+        zmq_socket.send_multipart([f"camera.{camera_id}".encode(), buffer.tobytes()])
 
-            # Publish the frame to the object detector service
-            # The message is sent in two parts: the camera ID and the frame data
-            # The frame is encoded as a JPEG for efficient network transmission
-            _, buffer = cv2.imencode('.jpg', frame)
-            zmq_socket.send_multipart([str(camera_id).encode(), buffer.tobytes()])
-
-        cap.release()
-        print(f"Released video capture for camera {camera_id}.")
-        time.sleep(5) # Wait a moment before attempting to reconnect
+    cap.release()
+    ffmpeg_process.wait()
+    LiveStream.objects.filter(camera_id=camera_id).delete()
+    print(f"Stopped stream for camera {camera_id}")
 
 def main():
     """
@@ -92,35 +88,22 @@ def main():
     """
     print("Starting Stream Processor Service...")
 
-    # Set up ZeroMQ publisher socket
-    # This socket will broadcast frames to any connected subscribers (the object detector)
-    zmq_context = zmq.Context()
-    zmq_socket = zmq_context.socket(zmq.PUB)
-    zmq_pub_url = os.getenv("ZMQ_PUB_URL", "tcp://*:5555")
-    zmq_socket.bind(zmq_pub_url)
-    print(f"ZeroMQ publisher bound to {zmq_pub_url}")
+    context = zmq.Context()
+    zmq_socket = context.socket(zmq.PUB)
+    zmq_socket.bind("tcp://*:5555")
 
-    # Get database connection and camera information
-    db_conn = get_db_connection()
-    cameras = get_cameras(db_conn)
-    if db_conn:
-        db_conn.close()
-
+    cameras = get_cameras()
     if not cameras:
-        print("No cameras found. Shutting down.")
+        print("No enabled cameras found. Shutting down.")
         return
 
-    # Start a thread for each camera to handle its stream independently
-    threads = []
-    for camera_id, rtsp_url in cameras:
-        thread = threading.Thread(target=stream_camera, args=(camera_id, rtsp_url, zmq_socket))
-        thread.daemon = True  # Allows main thread to exit even if camera threads are running
-        threads.append(thread)
+    for camera in cameras:
+        thread = threading.Thread(target=stream_camera, args=(camera.id, camera.rtsp_main_url, zmq_socket))
+        thread.daemon = True
         thread.start()
 
-    print(f"Started {len(threads)} camera streaming threads.")
-    
-    # Keep the main thread alive to allow daemon threads to run
+    print(f"Started {len(cameras)} camera streaming threads.")
+
     try:
         while True:
             time.sleep(60)
@@ -128,10 +111,6 @@ def main():
     except KeyboardInterrupt:
         print("Shutting down stream processor.")
 
-    # Clean up ZeroMQ resources
-    zmq_socket.close()
-    zmq_context.term()
-    print("Stream processor shut down.")
-
 if __name__ == "__main__":
+    time.sleep(10) # Wait for the DB to be ready
     main()

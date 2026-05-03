@@ -1,3 +1,5 @@
+Django==4.2
+psycopg2-binary
 opencv-python
 pyzmq
-psycopg2-binary
+ffmpeg-python

@@ -1,115 +1,95 @@
 
 import zmq
-import psycopg2
-from psycopg2 import OperationalError
 import os
 import json
 import time
 from datetime import datetime
 
-# This service subscribes to detection events, saves them to the TimescaleDB database,
-# and includes a placeholder for future alert routing logic. It acts as the final sink
-# for the data pipeline.
+# --- Django Setup ---
+# This must happen before any Django models are imported.
+os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'src.api.core.settings')
+import django
+django.setup()
+# --- End Django Setup ---
 
-def get_db_connection():
-    """
-    Establishes and returns a connection to the PostgreSQL database.
-    Retries several times if the database is not ready, which is useful in
-    a containerized startup sequence.
-    """
-    retries = 5
-    while retries > 0:
-        try:
-            conn = psycopg2.connect(
-                dbname=os.getenv("DB_NAME"),
-                user=os.getenv("DB_USER"),
-                password=os.getenv("DB_PASSWORD"),
-                host=os.getenv("DB_HOST"),
-                port=os.getenv("DB_PORT")
-            )
-            print("Database connection successful.")
-            return conn
-        except OperationalError as e:
-            print(f"Database connection failed: {e}")
-            retries -= 1
-            print(f"Retrying connection in 5 seconds... ({retries} retries left)")
-            time.sleep(5)
-    print("Could not establish database connection. Exiting.")
-    return None
+from django.db import transaction
+from src.api.detections.models import DetectionEvent
+from src.api.automations.models import AutomationRule, AutomationAction
+from .actions import send_webhook
+from src.api.cameras.models import Camera
 
-def insert_detection_event(conn, event_data):
+def insert_detection_event(event_data):
     """
-    Inserts a single detection event into the TimescaleDB database.
+    Inserts a single detection event into the database using the Django ORM.
     The event data is parsed from the JSON message received from the object detector.
     """
-    sql = """INSERT INTO detection_events (time, camera_id, label, confidence, bounding_box)
-             VALUES (%s, %s, %s, %s, %s);"""
     try:
-        with conn.cursor() as cur:
-            # Convert Unix timestamp to a timezone-aware datetime object
-            event_time = datetime.fromtimestamp(event_data['time'])
-            # The bounding_box is converted to a JSON string for the JSONB column
-            bounding_box_json = json.dumps(event_data['bounding_box'])
-            
-            cur.execute(sql, (
-                event_time,
-                event_data['camera_id'],
-                event_data['label'],
-                event_data['confidence'],
-                bounding_box_json
-            ))
-        conn.commit()
-    except psycopg2.Error as e:
+        camera = Camera.objects.get(id=event_data['camera-id'])
+        event_time = datetime.fromtimestamp(event_data['time'])
+
+        DetectionEvent.objects.create(
+            camera=camera,
+            event_type=event_data['label'],
+            confidence=event_data['confidence'],
+            frame_ts=event_time,
+            metadata={'bounding_box': event_data['bounding_box']}
+        )
+        print(f"Successfully inserted event for camera {camera.id}")
+    except Camera.DoesNotExist:
+        print(f"Error: Camera with ID {event_data['camera-id']} not found.")
+    except Exception as e:
         print(f"Error inserting detection event: {e}")
-        conn.rollback() # Roll back the transaction on error
 
-def route_alert(conn, event_data):
+def route_alert(event_data):
     """
-    Evaluates automation rules against the event data and triggers alerts.
-    This function is wrapped in a REPEATABLE READ transaction to ensure that the
-    rules are not modified while they are being evaluated.
+    Evaluates automation rules against the event and dispatches actions.
+    This function first queries the database to find matching rules and then,
+    after the transaction is complete, executes the required actions.
     """
+    actions_to_run = []
+
     try:
-        # Set transaction isolation level to REPEATABLE READ
-        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_REPEATABLE_READ)
-        with conn.cursor() as cur:
-            print(f"Evaluating rules for event: {event_data}")
+        # Start a transaction to safely read the rules.
+        with transaction.atomic():
+            rules = AutomationRule.objects.filter(
+                is_active=True, 
+                trigger_event_type=event_data['label']
+            ).prefetch_related('actions')
 
-            # In a real system, you would fetch and evaluate a set of rules
-            # from the database that match the event type or camera.
-            # For example:
-            # cur.execute("SELECT conditions, actions FROM automation_rules WHERE trigger_event_type = %s", (event_data['label'],))
-            # rules = cur.fetchall()
+            for rule in rules:
+                # Simplified condition evaluation for demonstration.
+                if event_data['confidence'] > rule.conditions.get('confidence_threshold', 0.85):
+                    print(f"Rule 'rule.name' matched!")
+                    for action in rule.actions.all():
+                        actions_to_run.append({
+                            'type': action.action_type,
+                            'params': action.action_params,
+                        })
+    
+    except Exception as e:
+        print(f"Error reading automation rules: e")
+        return # Do not proceed if database read fails
 
-            # Placeholder: Simple rule evaluation
-            if event_data['label'] == 'person' and event_data['confidence'] > 0.85:
-                print(f"ALERT: Person detected on camera {event_data['camera_id']} with {event_data['confidence']:.2f} confidence.")
-                # Here you would dispatch actions, like sending a notification.
+    # --- Execute Actions --- #
+    # This part happens *after* the database transaction is closed.
+    if not actions_to_run:
+        return
 
-        conn.commit() # Commit the transaction
-    except psycopg2.Error as e:
-        print(f"Error in route_alert transaction: {e}")
-        conn.rollback()
-    finally:
-        # It's good practice to reset the isolation level to the default.
-        conn.set_isolation_level(psycopg2.extensions.ISOLATION_LEVEL_DEFAULT)
+    print(f"Executing actions_to_run actions...")
+    for action_item in actions_to_run:
+        if action_item['type'] == 'send_webhook':
+            send_webhook(action_item['params']['url'], event_data)
 
 def main():
     """
-    Main function to set up ZeroMQ, connect to the database, and start the event processing loop.
+    Main function to set up ZeroMQ and start the event processing loop.
     """
-    print("Starting Event Handler Service...")
-
-    # Connect to the database
-    db_conn = get_db_connection()
-    if not db_conn:
-        return
+    print("Starting Event Handler Service with Django ORM...")
 
     # Set up ZeroMQ subscriber socket
-    # This socket listens for detection events published by the object_detector service.
     zmq_context = zmq.Context()
     sub_socket = zmq_context.socket(zmq.SUB)
-    sub_socket.subscribe(b'')  # Subscribe to all messages
+    sub_socket.subscribe(b'')
     zmq_sub_url = os.getenv("ZMQ_SUB_URL", "tcp://localhost:5556")
     sub_socket.connect(zmq_sub_url)
     print(f"ZeroMQ subscriber connected to {zmq_sub_url}")
@@ -117,26 +97,20 @@ def main():
     print("Event handler is ready and waiting for detection events...")
     try:
         while True:
-            # Receive a JSON-formatted detection event
             event_data = sub_socket.recv_json()
-            
-            # Insert the event into the database
-            insert_detection_event(db_conn, event_data)
-            
-            # Process the event for potential alerts
-            route_alert(db_conn, event_data)
+            insert_detection_event(event_data)
+            route_alert(event_data)
 
     except KeyboardInterrupt:
         print("Shutting down event handler.")
     except Exception as e:
         print(f"An unexpected error occurred: {e}")
     finally:
-        # Clean up database and ZeroMQ resources
-        if db_conn:
-            db_conn.close()
         sub_socket.close()
         zmq_context.term()
         print("Event handler shut down.")
 
 if __name__ == "__main__":
+    # Give the database a moment to start up, which is common in containerized environments.
+    time.sleep(5)
     main()

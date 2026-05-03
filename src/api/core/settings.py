@@ -32,13 +32,15 @@ INSTALLED_APPS = [
     'rest_framework',
     'corsheaders',
     'timescale',
+    'storages',
     'identities.apps.IdentitiesConfig',
     'cameras.apps.CamerasConfig',
     'detections.apps.DetectionsConfig',
     'automations.apps.AutomationsConfig',
     'notifications.apps.NotificationsConfig',
-    'security.apps.SecurityConfig',
+    'auditing.apps.AuditingConfig',
     'recordings.apps.RecordingsConfig',
+    'storage.apps.StorageConfig',
 ]
 
 MIDDLEWARE = [
@@ -103,6 +105,10 @@ CACHES = {
     }
 }
 
+# Session Management
+SESSION_ENGINE = "django.contrib.sessions.backends.cache"
+SESSION_CACHE_ALIAS = "default"
+
 # Password validation
 # https://docs.djangoproject.com/en/4.2/ref/settings/#auth-password-validators
 
@@ -152,3 +158,22 @@ if 'test' in sys.argv or 'pytest' in sys.argv[0]:
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 CORS_ORIGIN_ALLOW_ALL = True
+
+# Storage Settings
+STORAGE_BACKEND = os.getenv('STORAGE_BACKEND', 'local')
+
+if STORAGE_BACKEND == 'minio':
+    MINIO_ENDPOINT = os.getenv('MINIO_ENDPOINT')
+    MINIO_ACCESS_KEY = os.getenv('MINIO_ACCESS_KEY')
+    MINIO_SECRET_KEY = os.getenv('MINIO_SECRET_KEY')
+    AWS_STORAGE_BUCKET_NAME = os.getenv('MINIO_BUCKET_NAME')
+    AWS_S3_CUSTOM_DOMAIN = f'{os.getenv("MINIO_ENDPOINT").split("//")[1]}'
+    AWS_S3_OBJECT_PARAMETERS = {
+        'CacheControl': 'max-age=86400',
+    }
+    DEFAULT_FILE_STORAGE = 'src.api.storage.backends.MinioStorage'
+else:
+    # Local storage settings
+    MEDIA_URL = '/media/'
+    MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
+    DEFAULT_FILE_STORAGE = 'src.api.storage.backends.LocalStorage'

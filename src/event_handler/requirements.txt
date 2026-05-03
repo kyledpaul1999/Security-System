@@ -1,2 +1,11 @@
-pyzmq
+Django==4.2
 psycopg2-binary
+djangorestframework
+django-cors-headers
+python-dotenv
+django-timescaledb
+django-redis
+pytest
+pytest-django
+factory-boy
+pyzmq

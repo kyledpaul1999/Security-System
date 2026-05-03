@@ -21,6 +21,22 @@ services:
     networks:
       - security_system_network
 
+  gateway:
+    build:
+      context: ./src/gateway
+      dockerfile: Dockerfile
+    container_name: gateway
+    ports:
+      - "3000:3000"
+    depends_on:
+      api:
+        condition: service_started
+    environment:
+      - API_SERVICE_URL=http://api:8000
+      - JWT_SECRET=a-secure-secret-for-jwt-that-is-long-and-random
+    networks:
+      - security_system_network
+
   redis:
     image: redis:7-alpine
     container_name: redis
@@ -47,6 +63,27 @@ services:
         condition: service_healthy
       redis:
         condition: service_started
+    environment:
+      - STORAGE_BACKEND=minio # or 'local'
+      - MINIO_ENDPOINT=http://minio:9000
+      - MINIO_ACCESS_KEY=minioadmin
+      - MINIO_SECRET_KEY=minioadmin
+      - MINIO_BUCKET_NAME=security-system
+    networks:
+      - security_system_network
+
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    volumes:
+      - minio_data:/data
     networks:
       - security_system_network
 
@@ -56,7 +93,11 @@ services:
     container_name: stream_processor
     depends_on:
       - timescaledb
+    volumes:
+      - ./src:/app/src
     environment:
+      - PYTHONPATH=/app
+      - DJANGO_SETTINGS_MODULE=src.api.core.settings
       - DB_USER=user
       - DB_PASSWORD=password
       - DB_HOST=timescaledb
@@ -87,7 +128,11 @@ services:
     depends_on:
       - person_detector
       - timescaledb
+    volumes:
+      - ./src:/app/src
     environment:
+      - PYTHONPATH=/app
+      - DJANGO_SETTINGS_MODULE=src.api.core.settings
       - DB_USER=user
       - DB_PASSWORD=password
       - DB_HOST=timescaledb
