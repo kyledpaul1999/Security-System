@@ -1,5 +1,6 @@
 from django.db import models, transaction
 import uuid
+from recordings.models import RetentionPolicy
 
 class NvrDevice(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
@@ -34,6 +35,7 @@ class Camera(models.Model):
     last_health_check_at = models.DateTimeField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    retention_policy = models.ForeignKey(RetentionPolicy, on_delete=models.SET_NULL, blank=True, null=True)
 
     def __str__(self):
         return self.name

@@ -1,13 +1,8 @@
-from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import RecordingViewSet, RecordingSegmentViewSet, ClipViewSet, LiveStreamViewSet
+from recordings.views import RecordingViewSet, ClipViewSet
 
 router = DefaultRouter()
 router.register(r'recordings', RecordingViewSet)
-router.register(r'segments', RecordingSegmentViewSet)
 router.register(r'clips', ClipViewSet)
-router.register(r'livestreams', LiveStreamViewSet)
 
-urlpatterns = [
-    path('', include(router.urls)),
-]
+urlpatterns = router.urls

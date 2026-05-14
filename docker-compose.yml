@@ -145,6 +145,7 @@ services:
 volumes:
   timescaledb_data:
   redis_data:
+  minio_data:
 
 networks:
   security_system_network:

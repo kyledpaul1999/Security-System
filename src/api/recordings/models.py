@@ -53,6 +53,13 @@ class Clip(models.Model):
     exported_by = models.ForeignKey(User, on_delete=models.SET_NULL, blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+class RetentionPolicy(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    name = models.CharField(max_length=255)
+    retain_for_days = models.IntegerField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
 class LiveStream(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     camera = models.ForeignKey(Camera, on_delete=models.CASCADE)
