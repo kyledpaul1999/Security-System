@@ -2,21 +2,34 @@ import os
 import time
 import threading
 
-# --- Django Setup ---
-os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'src.api.core.settings')
-import django
-django.setup()
-# --- End Django Setup ---
-
+import os
+import time
+import threading
+import psycopg2
 import cv2
 import zmq
 import ffmpeg
-from src.api.cameras.models import Camera
-from src.api.recordings.models import LiveStream
+
+import requests
+
+def get_db_connection():
+    return psycopg2.connect(
+        dbname=os.getenv("DB_NAME"),
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASSWORD"),
+        host=os.getenv("DB_HOST"),
+        port=os.getenv("DB_PORT")
+    )
 
 def get_cameras():
-    """Fetches all enabled cameras from the database using the Django ORM."""
-    return Camera.objects.filter(is_enabled=True)
+    """Fetches all enabled cameras from the database using a direct DB connection."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("SELECT id, rtsp_main_url FROM cameras_camera WHERE is_enabled = TRUE")
+    cameras = cur.fetchall()
+    cur.close()
+    conn.close()
+    return cameras
 
 def start_ffmpeg_process(rtsp_url, hls_output_path):
     try:
@@ -54,14 +67,19 @@ def stream_camera(camera_id, rtsp_url, zmq_socket):
     if not ffmpeg_process:
         return
 
-    LiveStream.objects.update_or_create(
-        camera_id=camera_id,
-        defaults={
-            'status': 'active',
-            'hls_manifest_path': hls_output_path,
-            'stream_profile': 'main'
-        }
-    )
+    # Notify the API that the stream is active
+    try:
+        requests.post(
+            f"http://api:8000/api/recordings/livestream-status/",
+            json={
+                "camera": camera_id,
+                "status": "active",
+                "hls_manifest_path": hls_output_path,
+                "stream_profile": "main",
+            },
+        )
+    except requests.exceptions.RequestException as e:
+        print(f"Error notifying API of active stream for camera {camera_id}: {e}")
 
     # --- ZeroMQ Frame Publishing ---
     cap = cv2.VideoCapture(rtsp_url)
@@ -79,8 +97,13 @@ def stream_camera(camera_id, rtsp_url, zmq_socket):
 
     cap.release()
     ffmpeg_process.wait()
-    LiveStream.objects.filter(camera_id=camera_id).delete()
-    print(f"Stopped stream for camera {camera_id}")
+    print(f"Stopped stream for camera {camer-id}")
+
+    # Notify the API that the stream has stopped
+    try:
+        requests.delete(f"http://api:8000/api/recordings/livestream-status/{camera_id}/")
+    except requests.exceptions.RequestException as e:
+        print(f"Error notifying API of stopped stream for camera {camera_id}: {e}")
 
 def main():
     """
@@ -98,7 +121,7 @@ def main():
         return
 
     for camera in cameras:
-        thread = threading.Thread(target=stream_camera, args=(camera.id, camera.rtsp_main_url, zmq_socket))
+        thread = threading.Thread(target=stream_camera, args=(camera[0], camera[1], zmq_socket))
         thread.daemon = True
         thread.start()
 

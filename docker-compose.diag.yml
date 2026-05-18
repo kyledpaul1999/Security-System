@@ -1,0 +1,7 @@
+version: '3.8'
+
+services:
+  diagnostic_test:
+    build:
+      context: .
+      dockerfile: Dockerfile.diag
