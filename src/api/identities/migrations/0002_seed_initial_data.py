@@ -16,7 +16,7 @@ def create_initial_data(apps, schema_editor):
     # Create Admin User
     if not User.objects.filter(username='admin').exists():
         admin_user = User.objects.create_superuser('admin', 'admin@example.com', 'password')
-        admin_user.roles.add(admin_role)
+        admin_user.roles.add(admin_role.id)
 
     # Create NVR Device
     nvr, _ = NvrDevice.objects.get_or_create(

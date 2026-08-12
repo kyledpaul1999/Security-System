@@ -11,5 +11,6 @@ urlpatterns = [
         path('automations/', include('automations.urls')),
         path('notifications/', include('notifications.urls')),
         path('auditing/', include('auditing.urls')),
+        path('security/', include('security.urls')),
     ])),
 ]

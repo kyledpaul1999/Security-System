@@ -40,7 +40,6 @@ INSTALLED_APPS = [
     'notifications.apps.NotificationsConfig',
     'auditing.apps.AuditingConfig',
     'recordings.apps.RecordingsConfig',
-    'storage.apps.StorageConfig',
 ]
 
 MIDDLEWARE = [

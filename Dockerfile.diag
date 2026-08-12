@@ -1,0 +1,11 @@
+# Diagnostic Dockerfile to isolate the dependency issue
+FROM python:3.9-slim
+
+# Install system dependencies required by OpenCV
+RUN apt-get update && apt-get install -y libgl1 libglib2.0-0 libxcb1
+
+# Install Python dependencies
+RUN pip install opencv-python ffmpeg-python
+
+# Simple command to test if cv2 can be imported
+CMD ["python", "-c", "import cv2; print(f'OpenCV version: {cv2.__version__}')"]
