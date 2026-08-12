@@ -412,6 +412,42 @@ Initial action types:
 
 WireGuard is usually simpler and faster. OpenVPN is still valid and widely supported.
 
+### 6.13 MCP Server (Optional AI-Facing Gateway)
+
+**Recommended stack**: Python + `mcp` SDK (`FastMCP`), running as an independent container.
+
+**Purpose**
+
+The **Model Context Protocol (MCP) Server** is an optional service that exposes a curated, safety-gated subset of the security system's capabilities to Large Language Models (Claude, GPT, local LLMs, etc.). It acts as an AI-facing adapter layer on top of the existing REST API rather than replacing it.
+
+**Responsibilities**
+
+- Expose read-only *tools* for querying detections, recordings, camera health, and audit logs.
+- Expose gated *tools* for privileged actions (arm/disarm, PTZ, clip export) behind explicit user confirmation and RBAC checks.
+- Expose *resources* such as system health snapshots, recent alert digests, and camera inventories.
+- Expose *prompt templates* for common workflows (weekly audit, incident triage, anomaly summary).
+- Enforce a dedicated MCP service account with least-privilege scopes when calling the internal API Gateway.
+- Emit an `mcp.tool.invoked` audit event for every tool call.
+
+**Design Notes**
+
+- The MCP server MUST NOT bypass the API Gateway; all state changes must flow through existing authenticated endpoints so audit and RBAC logic remain the single source of truth.
+- Transport: local `stdio` for developer/desktop AI hosts; `HTTP + SSE` with OAuth 2.1 for remote LLM hosts (only over VPN in phase 1).
+- Prompt-injection safety: content pulled from cameras, logs, or detections must be treated as untrusted input; destructive tools require an explicit confirmation flow, not autonomous invocation.
+- Deployment: a separate container in Docker Compose (`mcp-server`) so it can be enabled/disabled independently of the core stack.
+
+**Example Tool Surface**
+
+```text
+list_recent_detections(camera_id?, hours?, min_confidence?)
+get_camera_health(camera_id?)
+search_recordings(camera_id, from, to)
+get_automation_runs(rule_id?, limit?)
+summarize_alerts(hours?)
+request_arm_zone(zone_id)          # gated, requires user confirmation
+request_create_clip(recording_id)  # gated, requires user confirmation
+```
+
 ## 7. Functional Requirements
 
 ### 7.1 User Management and Authentication
@@ -557,6 +593,7 @@ WireGuard is usually simpler and faster. OpenVPN is still valid and widely suppo
 - Redis 7.
 - ZeroMQ.
 - FFmpeg.
+- Model Context Protocol (`mcp` Python SDK) for the optional AI-facing gateway.
 
 ### 9.3 AI/ML
 
@@ -1662,6 +1699,7 @@ Recommendation: use substream/sampled frames first.
 - Multi-user household permissions.
 - GPU scheduling and model versioning.
 - On-device edge inference.
+- **MCP (Model Context Protocol) server** exposing read/gated tools and resources to LLM clients for natural-language incident triage, alert summarization, and human-in-the-loop control.
 
 ## 23. Baseline Recommendation
 

@@ -3,7 +3,7 @@ import pytest
 from rest_framework.test import APIClient
 from rest_framework import status
 from django.contrib.auth import get_user_model
-from src.api.cameras.models import Camera, NvrDevice
+from cameras.models import Camera, NvrDevice
 
 User = get_user_model()
 

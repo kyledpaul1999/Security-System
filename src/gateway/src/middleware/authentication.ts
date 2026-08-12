@@ -1,11 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
-import jwt from 'jsonwebtoken';
+import jwt, { JwtPayload, VerifyErrors } from 'jsonwebtoken';
 
-// Extend the Express Request interface to include the user payload
 declare global {
   namespace Express {
     interface Request {
-      user?: any;
+      user?: string | JwtPayload;
     }
   }
 }
@@ -17,23 +16,23 @@ export const authenticateToken = (req: Request, res: Response, next: NextFunctio
   const token = authHeader && authHeader.split(' ')[1];
 
   if (token == null) {
-    return res.sendStatus(401); // Unauthorized
+    return res.sendStatus(401);
   }
 
-  jwt.verify(token, JWT_SECRET, (err: any, user: any) => {
-    if (err) {
-      return res.sendStatus(403); // Forbidden
+  jwt.verify(token, JWT_SECRET, (err: VerifyErrors | null, decoded: string | JwtPayload | undefined) => {
+    if (err || !decoded) {
+      return res.sendStatus(403);
     }
-    req.user = user;
+    req.user = decoded;
     next();
   });
 };
 
-// Placeholder for Role-Based Access Control
 export const authorizeRoles = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
-    if (!req.user || !roles.includes(req.user.role)) {
-        return res.status(403).send('Forbidden: Insufficient permissions');
+    const user = req.user;
+    if (!user || typeof user === 'string' || !roles.includes((user as JwtPayload).role as string)) {
+      return res.status(403).send('Forbidden: Insufficient permissions');
     }
     next();
   };

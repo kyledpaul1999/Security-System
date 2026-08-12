@@ -12,7 +12,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.getenv('SECRET_KEY')
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-fallback-key-for-dev-only')
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DEBUG', '0') == '1'
@@ -171,9 +171,9 @@ if STORAGE_BACKEND == 'minio':
     AWS_S3_OBJECT_PARAMETERS = {
         'CacheControl': 'max-age=86400',
     }
-    DEFAULT_FILE_STORAGE = 'src.api.storage.backends.MinioStorage'
+    DEFAULT_FILE_STORAGE = 'storage.backends.MinioStorage'
 else:
     # Local storage settings
     MEDIA_URL = '/media/'
     MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-    DEFAULT_FILE_STORAGE = 'src.api.storage.backends.LocalStorage'
+    DEFAULT_FILE_STORAGE = 'storage.backends.LocalStorage'

@@ -4,8 +4,8 @@ from rest_framework.test import APIClient
 from rest_framework import status
 from django.contrib.auth import get_user_model
 from django.utils import timezone
-from src.api.cameras.models import Camera
-from src.api.recordings.models import Recording
+from cameras.models import Camera
+from recordings.models import Recording
 
 User = get_user_model()
 

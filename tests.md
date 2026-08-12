@@ -1,155 +1,108 @@
-Of course. Testing these interconnected features requires a combination of automated tests and some manual, functional testing to see everything working together. Here’s a detailed guide on how you can approach testing for each of the functionalities you mentioned.
+# Comprehensive Testing Guide
 
-### **1. Camera Registration**
+This document provides a complete guide to testing the security system, from running automated unit and integration tests to performing manual end-to-end (E2E) functional verification.
 
-Camera registration is the process of adding a new camera to the system. This can be tested at both the API level (integration testing) and through manual HTTP requests.
+## 1. Running Automated Tests
 
-#### **Automated Testing (Integration Tests)**
+Automated tests are the first line of defense against regressions. They should be run frequently during development.
 
-The best way to test this automatically is with an API integration test. I have already created a test suite for the camera API that does exactly this.
+### Django `api` Service Tests
 
-*   **File:** [`test_cameras_api.py`](file:///Users/kylepaul/Projects/Security-System/src/api/cameras/test_cameras_api.py)
-*   **Key Test:** `test_create_camera`
+These tests cover the database models and the core API endpoints.
 
-Here is the relevant snippet from that file:
-
-```python
-# src/api/cameras/test_cameras_api.py
-
-def test_create_camera(self, authenticated_client):
-    """Test creating a new camera."""
-    data = {
-        'name': 'New Camera',
-        'channel_no': 3
-    }
-    
-    response = authenticated_client.post('/cameras/', data)
-    
-    assert response.status_code == status.HTTP_201_CREATED
-    assert Camera.objects.count() == 1
-    assert Camera.objects.get().name == 'New Camera'
+```bash
+# From the project root directory
+docker-compose exec api pytest
 ```
 
-This test uses `pytest` and Django REST Framework's `APIClient` to make a `POST` request to the `/cameras/` endpoint and asserts that a new camera is created in the database.
+*   **What it tests:**
+    *   **Model Logic:** Ensures database relationships, constraints, and custom methods work as expected (e.g., `test_cameras_models.py`).
+    *   **API Endpoints:** Verifies the CRUD operations for our core resources (e.g., `test_cameras_api.py`, `test_recordings_api.py`).
 
-#### **Manual Functional Testing**
+### Node.js `gateway` Service Tests
 
-You can also test this manually using a tool like `curl` or Postman.
+These tests cover the critical middleware of our API Gateway.
 
-1.  **Start the services:**
+```bash
+# From the /Users/kylepaul/Projects/Security-System/src/gateway/ directory
+npm install
+npm test
+```
+
+*   **What it tests:**
+    *   **Authentication:** Confirms that our JWT middleware correctly validates tokens and protects routes.
+    *   **Proxying:** Ensures that the gateway is correctly configured to forward requests.
+
+### Python `stream_processor` and `event_handler` Tests
+
+These tests can be run from within the `api` service container, as they share the same Python environment.
+
+```bash
+# From the project root directory
+docker-compose exec api pytest src/stream_processor/
+docker-compose exec api pytest src/event_handler/
+```
+
+*   **What it tests:**
+    *   **Streaming Logic:** Verifies that the `stream_processor` correctly initiates FFmpeg and publishes frames to ZeroMQ.
+    *   **Alert Routing:** Ensures the `event_handler` correctly evaluates rules and dispatches actions.
+
+---
+
+## 2. Manual End-to-End (E2E) Functional Testing
+
+After the automated tests pass, this phase ensures all services work together correctly.
+
+### Setup: Start the System
+
+1.  **Start all services:**
     ```bash
-    docker-compose up -d
+    docker-compose up --build -d
     ```
-2.  **Get an auth token:** You'll first need to log in as the admin user to get a JWT.
-3.  **Make a `POST` request:**
+2.  **Run database migrations:** This creates the database schema and runs the data seeding migration.
+    ```bash
+    docker-compose exec api python manage.py migrate
+    ```
+
+### Test Case 1: User Login and Camera Registration
+
+1.  **Get an Auth Token:** Use `curl` or Postman to log in as the default admin user created by the seeder.
+    ```bash
+    # This will return an access token
+    curl -X POST http://localhost:8000/api/auth/login/ \
+      -H "Content-Type: application/json" \
+      -d '{"username": "admin", "password": "password"}'
+    ```
+2.  **Register a Camera:** Using the token from the previous step, register a camera. **You must use a real, valid RTSP URL from your network for this to work.**
     ```bash
     curl -X POST http://localhost:8000/api/cameras/ \
-      -H "Authorization: Bearer <YOUR_JWT>" \
+      -H "Authorization: Bearer <YOUR_ACCESS_TOKEN>" \
       -H "Content-Type: application/json" \
       -d '{
-            "name": "My New Camera",
-            "channel_no": 4,
-            "rtsp_main_url": "rtsp://your-stream-url"
+            "name": "Live Test Camera",
+            "channel_no": 1,
+            "rtsp_main_url": "rtsp://your-actual-camera-url"
           }'
     ```
-    You should receive a `201 Created` response.
+    *   **Expected Result:** You get a `201 Created` response.
 
----
+### Test Case 2: Live Video Playback
 
-### **2. RTSP Stream Discovery**
-
-In the current implementation, RTSP stream "discovery" is a manual process. The user is expected to provide the correct RTSP URL when registering a camera. The `architecture.md` mentions ONVIF for future automatic discovery, but that is not yet implemented.
-
-Therefore, testing this is about ensuring that the `stream_processor` correctly uses the `rtsp_main_url` that is saved in the `Camera` model.
-
-#### **Automated Testing (Unit Tests)**
-
-The unit test for the `stream_processor` that I created mocks out the RTSP URL and the `ffmpeg` process. This test verifies that the `stream_camera` function is called with the correct RTSP URL from the `Camera` object.
-
-*   **File:** [`test_main.py`](file:///Users/kylepaul/Projects/Security-System/src/stream_processor/test_main.py)
-
-This test ensures that the correct URL is being passed to the streaming logic.
-
----
-
-### **3. HLS Playback**
-
-HLS playback is best tested functionally, as it involves multiple services working together (`api`, `stream_processor`, and `nginx`).
-
-#### **Manual Functional Testing**
-
-1.  **Start the services:**
+1.  **Check Service Logs:** Check the logs of the `stream_processor` to confirm it has started streaming the new camera.
     ```bash
-    docker-compose up -d
+    docker-compose logs -f stream_processor
     ```
-2.  **Register a camera:** Use the manual `curl` command from above to register a camera with a **valid** RTSP stream URL.
-3.  **Verify the stream is running:** You should see logs in the `stream_processor` container indicating that it has started streaming the camera.
-4.  **Play the HLS stream:** The HLS manifest will be available at a URL like `http://localhost:8080/hls/<camer-id>/index.m3u8`. The `8080` port is based on the `nginx` service in the `docker-compose.yml` file. You can open this URL in a media player that supports HLS, such as:
-    *   **VLC Media Player:** Go to `File > Open Network...` and paste the URL.
-    *   **Online HLS Players:** There are several websites that can play HLS streams if you provide the URL.
+    *   **Expected Result:** You should see a log message like `Starting stream for camera <camer-id>...`.
+2.  **Play the HLS Stream:** The HLS manifest URL will be `http://localhost:8080/hls/<camer-id>/index.m3u8`. The port `8080` is mapped by the `nginx` service.
+    *   Open this URL in a media player that supports HLS (e.g., VLC Media Player, QuickTime on macOS, or an online HLS player).
+    *   **Expected Result:** The live video stream from your camera should start playing.
 
-If the stream plays, you have successfully verified that RTSP ingestion and HLS transcoding are working correctly.
+### Test Case 3: Event and Alerting Pipeline (Advanced)
 
----
+This test verifies that the event system can trigger actions. It requires a webhook receiver.
 
-### **4. Recording Metadata**
-
-Similar to camera registration, recording metadata can be tested with both automated integration tests and manual API requests.
-
-#### **Automated Testing (Integration Tests)**
-
-I have also created a test suite for the recording API.
-
-*   **File:** [`test_recordings_api.py`](file:///Users/kylepaul/Projects/Security-System/src/api/recordings/test_recordings_api.py)
-*   **Key Tests:** `test_create_recording` and `test_retrieve_recording`
-
-Here is a snippet:
-
-```python
-# src/api/recordings/test_recordings_api.py
-
-def test_create_recording(self, authenticated_client, camera_fixture):
-    """Test creating a new recording."""
-    data = {
-        'camera': camera_fixture.id,
-        'recording_type': 'manual',
-        'start_time': timezone.now(),
-        'end_time': timezone.now() + timezone.timedelta(minutes=5),
-        'object_prefix': 'rec/new/',
-        'duration_seconds': 300
-    }
-    
-    response = authenticated_client.post('/recordings/', data)
-    
-    assert response.status_code == status.HTTP_201_CREATED
-    assert Recording.objects.count() == 1
-```
-
-This test verifies that you can create a new recording via the API and that the metadata is saved to the database.
-
-#### **Manual Functional Testing**
-
-You can use `curl` to create and retrieve recording metadata.
-
-1.  **Create a recording:**
-    ```bash
-    curl -X POST http://localhost:8000/api/recordings/ \
-      -H "Authorization: Bearer <YOUR_JWT>" \
-      -H "Content-Type: application/json" \
-      -d '{
-            "camera": "<your_camer-id>",
-            "recording_type": "manual",
-            "start_time": "2026-05-02T10:00:00Z",
-            "end_time": "2026-05-02T10:05:00Z",
-            "object_prefix": "rec/manual/",
-            "duration_seconds": 300
-          }'
-    ```
-2.  **Retrieve the recording:** After creating it, you can fetch its metadata:
-    ```bash
-    curl http://localhost:8000/api/recordings/<recording_id>/ \
-      -H "Authorization: Bearer <YOUR_JWT>"
-    ```
-    This should return the JSON object with all the metadata for that recording.
-
-By combining these automated and manual testing approaches, you can have high confidence that these core features are working as expected.
+1.  **Set up a Webhook Receiver:** Use a service like [webhook.site](https://webhook.site/) or `ngrok` to get a publicly accessible URL that can receive POST requests.
+2.  **Update the Automation Rule:** The data seeder created a sample rule. Use the API to find its ID and update its action to point to your webhook URL.
+3.  **Trigger a Detection (Simulated):** Since the AI service is not yet complete, you can simulate a detection event by manually publishing a message to the ZeroMQ topic. This is an advanced step for isolated testing.
+4.  **Check Your Webhook Receiver:**
+    *   **Expected Result:** Your webhook receiver should receive a POST request containing the JSON payload of the simulated detection event, proving the `event_handler` is working correctly.

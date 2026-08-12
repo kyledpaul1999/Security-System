@@ -86,3 +86,53 @@ These are the major remaining implementation tasks to make the system fully func
 - [ ] **Historical Playback Search**: Enhance the recordings API to support searching by camera and time range.
 - [ ] **Clip Creation and Export**: Build the functionality to create clips from recordings and export them.
 - [ ] **Retention Policies**: Implement a system for automatically deleting old recordings based on retention policies.
+
+---
+
+## 4. Potential Future Work
+
+Items in this section are speculative enhancements — not required for the baseline system to function, but worth considering as the project matures.
+
+### 4.1 MCP (Model Context Protocol) Server
+
+Expose a safety-gated, AI-facing adapter on top of the existing REST API so that LLM clients (Claude Desktop, IDEs, custom agents) can query and — with explicit user confirmation — act on the security system. See `architecture.md` § 6.13.
+
+- [ ] **Scaffold `src/mcp_server/` service**
+  - **Why**: Provide a dedicated container that speaks the Model Context Protocol.
+  - **Action**: Create a new Python service (`main.py`, `Dockerfile`, `requirements.txt`) using the official `mcp` SDK (`FastMCP`). Add it as an optional profile in `docker-compose.yml`.
+
+- [ ] **Define the initial tool surface (read-only)**
+  - **Why**: Ship the lowest-risk capabilities first.
+  - **Action**: Implement tools that proxy to the API Gateway: `list_recent_detections`, `get_camera_health`, `search_recordings`, `get_automation_runs`, `summarize_alerts`.
+
+- [ ] **Define MCP resources**
+  - **Why**: Allow LLMs to consume structured system context without a tool call per read.
+  - **Action**: Expose resources for camera inventory, active automation rules, and the last N hours of detection events.
+
+- [ ] **Define MCP prompt templates**
+  - **Why**: Standardize recurring analyst workflows.
+  - **Action**: Add templates for "Weekly security audit", "Incident triage for camera X", and "Anomaly summary for the last 24h".
+
+- [ ] **Service account + RBAC scope for MCP**
+  - **Why**: Enforce least privilege; the MCP server must not have blanket admin.
+  - **Action**: Create a dedicated role `mcp_service` in the auth service with narrowly scoped permissions. Issue an API key/JWT that the MCP server uses when calling the gateway.
+
+- [ ] **Human-in-the-loop confirmation for gated tools**
+  - **Why**: Prevent LLM-driven or prompt-injection-driven destructive actions.
+  - **Action**: For any tool that mutates state (`request_arm_zone`, `request_create_clip`, PTZ, disarm), return a pending-action token; require a second, user-authenticated confirmation call before dispatching to the gateway.
+
+- [ ] **Audit + observability for MCP invocations**
+  - **Why**: Every AI action needs to be traceable.
+  - **Action**: Emit an `mcp.tool.invoked` entry into `audit_logs` for every tool call, including the client identity, tool name, arguments hash, and result status. Add Prometheus counters for invocations, denials, and confirmations.
+
+- [ ] **Transport hardening**
+  - **Why**: Remote LLM hosts should not reach the MCP server without strong auth.
+  - **Action**: Support `stdio` transport for local development and `HTTP + SSE` with OAuth 2.1 for remote use. Restrict remote access to VPN-only in phase 1.
+
+- [ ] **Prompt-injection defense review**
+  - **Why**: Detection captions, camera names, and log contents may contain attacker-controlled text.
+  - **Action**: Document a policy that treats all data returned from tools/resources as untrusted; ensure gated tools cannot be auto-invoked based solely on content pulled from another tool.
+
+- [ ] **Documentation**
+  - **Why**: Onboard future contributors and downstream LLM host operators.
+  - **Action**: Add an `MCP.md` (only if explicitly requested later) or a section in the README covering the tool inventory, auth model, and confirmation flow.

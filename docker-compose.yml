@@ -5,16 +5,16 @@ services:
     image: timescale/timescaledb:latest-pg14
     container_name: timescaledb
     environment:
-      - POSTGRES_USER=user
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_DB=security_system
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=${POSTGRES_DB}
     volumes:
       - timescaledb_data:/var/lib/postgresql/data
       - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user -d security_system"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 5
@@ -27,13 +27,13 @@ services:
       dockerfile: Dockerfile
     container_name: gateway
     ports:
-      - "3000:3000"
+      - "${GATEWAY_PORT}:3000"
     depends_on:
       api:
         condition: service_started
     environment:
-      - API_SERVICE_URL=http://api:8000
-      - JWT_SECRET=a-secure-secret-for-jwt-that-is-long-and-random
+      - API_SERVICE_URL=${API_SERVICE_URL}
+      - JWT_SECRET=${JWT_SECRET}
     networks:
       - security_system_network
 
@@ -64,11 +64,14 @@ services:
       redis:
         condition: service_started
     environment:
-      - STORAGE_BACKEND=minio # or 'local'
-      - MINIO_ENDPOINT=http://minio:9000
-      - MINIO_ACCESS_KEY=minioadmin
-      - MINIO_SECRET_KEY=minioadmin
-      - MINIO_BUCKET_NAME=security-system
+      - SECRET_KEY=${SECRET_KEY}
+      - DEBUG=${DEBUG}
+      - DJANGO_ALLOWED_HOSTS=${DJANGO_ALLOWED_HOSTS}
+      - STORAGE_BACKEND=${STORAGE_BACKEND}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
+      - MINIO_BUCKET_NAME=${MINIO_BUCKET_NAME}
     networks:
       - security_system_network
 
@@ -80,8 +83,8 @@ services:
       - "9000:9000"
       - "9001:9001"
     environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
+      - MINIO_ROOT_USER=${MINIO_ROOT_USER}
+      - MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
     volumes:
       - minio_data:/data
     networks:
@@ -98,13 +101,13 @@ services:
     environment:
       - PYTHONPATH=/app
       - DJANGO_SETTINGS_MODULE=src.api.core.settings
-      - DB_USER=user
-      - DB_PASSWORD=password
-      - DB_HOST=timescaledb
-      - DB_PORT=5432
-      - DB_NAME=security_system
-      - ZMQ_PUB_URL=tcp://*:5555
-      - RTSP_URLS=rtsp://user:password@192.168.1.64:554/Streaming/Channels/101,rtsp://user:password@192.168.1.64:554/Streaming/Channels/201,rtsp://user:password@192.168.1.64:554/Streaming/Channels/301
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${POSTGRES_DB}
+      - ZMQ_PUB_URL=${ZMQ_STREAM_PUB_URL}
+      - RTSP_URLS=${RTSP_URLS}
     networks:
       - security_system_network
 
@@ -115,9 +118,9 @@ services:
     depends_on:
       - stream_processor
     environment:
-      - ZMQ_SUB_URL=tcp://stream_processor:5555
-      - ZMQ_PUB_URL=tcp://*:5556
-      - MIN_CONTOUR_AREA=500
+      - ZMQ_SUB_URL=${ZMQ_DETECTOR_SUB_URL}
+      - ZMQ_PUB_URL=${ZMQ_DETECTOR_PUB_URL}
+      - MIN_CONTOUR_AREA=${MIN_CONTOUR_AREA}
     networks:
       - security_system_network
 
@@ -133,12 +136,12 @@ services:
     environment:
       - PYTHONPATH=/app
       - DJANGO_SETTINGS_MODULE=src.api.core.settings
-      - DB_USER=user
-      - DB_PASSWORD=password
-      - DB_HOST=timescaledb
-      - DB_PORT=5432
-      - DB_NAME=security_system
-      - ZMQ_SUB_URL=tcp://person_detector:5556
+      - DB_USER=${POSTGRES_USER}
+      - DB_PASSWORD=${POSTGRES_PASSWORD}
+      - DB_HOST=${DB_HOST}
+      - DB_PORT=${DB_PORT}
+      - DB_NAME=${POSTGRES_DB}
+      - ZMQ_SUB_URL=${ZMQ_EVENT_SUB_URL}
     networks:
       - security_system_network
 
